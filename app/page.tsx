@@ -63,31 +63,52 @@ export default async function Home() {
   return (
     <main className="shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">M</span>Montez Milhas</div>
-        <nav className="nav" aria-label="Categorias">
-          {Object.entries(categoryLabels).map(([category, label]) => (
-            <a key={category} href={`#${category}`}>{label}</a>
+        <a className="brand" href="#inicio"><span className="brand-mark">M</span>montez<span className="brand-accent">milhas</span></a>
+        <span className="status"><span className="status-dot" /> Coleta a cada 12 horas</span>
+      </header>
+      <div className="container" id="inicio">
+        <section className="intro">
+          <div className="eyebrow">SEU PRÓXIMO DESTINO COMEÇA AQUI</div>
+          <h1>Mais possibilidades.<br /><span>Melhores oportunidades.</span></h1>
+          <p>Transferências bonificadas, passagens com milhas e compra de pontos. Todas as ofertas em uma página.</p>
+          <div className="summary"><strong>{offers.length} ofertas no painel</strong><span>{latest ? `Último registro · ${formatDate(latest)}` : "Aguardando novas ofertas"}</span></div>
+        </section>
+        <nav className="category-nav" aria-label="Ir para categoria">
+          {Object.entries(categoryLabels).map(([category, label], index) => (
+            <a href={`#${category}`} key={category}><span className="category-number">0{index + 1}</span>{label}<span className="nav-count">{offers.filter(offer => offer.category === category).length}</span></a>
           ))}
         </nav>
-      </header>
-      <section className="container">
-        <h1>Ofertas de milhas e pontos</h1>
-        <p>Coleta programada a cada 12 horas. {latest && `Última oferta registrada em ${formatDate(latest)}.`}</p>
-        {Object.entries(categoryLabels).map(([category, label]) => {
+        {Object.entries(categoryLabels).map(([category, label], index) => {
           const matching = offers.filter(offer => offer.category === category);
           return (
-            <section key={category} id={category} style={{marginTop: 32, scrollMarginTop: 96}}>
-              <div className="section-head"><h2>{label}</h2><span className="status">{matching.length} ofertas</span></div>
-              {category === "passagem" && <p>Ofertas por trecho saindo de São Paulo, com foco em EUA e Europa. Consulte datas e disponibilidade na fonte.</p>}
+            <section key={category} id={category} className={`offer-section ${category}`}>
+              <div className="section-head">
+                <div><span className="section-kicker">0{index + 1} / OPORTUNIDADES</span><h2>{label}</h2></div>
+                <span className="section-count">{matching.length} {matching.length === 1 ? "oferta" : "ofertas"}</span>
+              </div>
+              {category === "passagem" && <p className="section-description">Saindo de São Paulo, com foco em EUA e Europa. Os valores indicam o preço por trecho.</p>}
               {matching.length ? (
-                <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 12}}>
-                  {matching.map(offer => <article key={offer.id} className="stat"><div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}><span className="stat-label">{categoryLabels[offer.category] ?? offer.category}</span><span className="stat-note">Coletado em {formatDate(offer.collected_at)}</span></div><h3 style={{font:"700 17px Manrope,sans-serif",margin:"10px 0 6px"}}>{offer.title}</h3>{offer.details && <p style={{fontSize:13,color:"#70809a",lineHeight:1.6,margin:"0 0 10px"}}>{offer.details}</p>}<div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",fontSize:12}}><span style={{color:"#70809a"}}>Fonte: {offer.source_name}{offer.expires_at ? (offer.category === "passagem" ? " · Exibição até " : " · Válido até ")+formatDate(offer.expires_at) : ""}</span><a href={offer.source_url} target="_blank" rel="noreferrer" style={{color:"#1769e0",fontWeight:700,textDecoration:"none"}}>Ver fonte original ↗</a></div></article>)}
+                <div className="offer-grid">
+                  {matching.map(offer => (
+                    <article key={offer.id} className="offer-card">
+                      <div className="card-top"><span className="offer-tag">{categoryLabels[offer.category]}</span><span className="recorded">Registrado em {formatDate(offer.collected_at)}</span></div>
+                      <h3>{offer.title}</h3>
+                      {offer.details && <p className="offer-details">{offer.details}</p>}
+                      <div className="card-bottom">
+                        <div className="source">Fonte · {offer.source_name}
+                          {offer.expires_at && <span>{offer.category === "passagem" ? "Exibição até " : "Válido até "}{formatDate(offer.expires_at)}</span>}
+                        </div>
+                        <a className="offer-link" href={offer.source_url} target="_blank" rel="noreferrer">Ver oferta <span aria-hidden="true">↗</span></a>
+                      </div>
+                    </article>
+                  ))}
                 </div>
-              ) : <div className="stat">Nenhuma oferta confirmada nesta categoria no momento.</div>}
+              ) : <div className="empty-state"><span aria-hidden="true">◎</span><div><h3>Aguardando oportunidades</h3><p>Nenhuma oferta confirmada nesta categoria no momento. As próximas consultas serão feitas pelo coletor programado.</p></div></div>}
             </section>
           );
         })}
-      </section>
+        <footer className="footer"><span>Montez Milhas · Projeto independente</span><span>Confira condições, taxas e disponibilidade na fonte antes de participar.</span></footer>
+      </div>
     </main>
   );
 }
