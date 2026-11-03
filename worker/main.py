@@ -115,8 +115,70 @@ OFFICIAL_CAMPAIGNS = {
 }
 
 
-def discover_campaigns(client):
+
+def article_offer(entry, html, now):
+    published = entry.get("published_parsed")
+    if not published:
+        return None
+    published_at = datetime(*published[:6], tzinfo=timezone.utc)
+    if not timedelta(0) <= now - published_at <= timedelta(days=7):
+        return None
+    title = BeautifulSoup(entry.get("title", ""), "html.parser").get_text(" ", strip=True)
+    if re.search(r"encerrad|expirad", title, re.I):
+        return None
+    if re.search(r"transfer[eê]n|transfira", title, re.I) and re.search(r"b[oô]nus|bonific", title, re.I):
+        category = "transferencia"
+    elif re.search(r"compra (?:de )?(?:pontos|milhas)", title, re.I) and re.search(r"desconto|b[oô]nus", title, re.I):
+        category = "compra_milhas"
+    else:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+    body = soup.select_one(".entry-content, .post-content, .td-post-content, article")
+    if body is None:
+        return None
+    for irrelevant in body.select("script, style, nav, aside, .related-posts, .comments"):
+        irrelevant.decompose()
+    paragraphs = [p.get_text(" ", strip=True) for p in body.select("p, li")]
+    zone = ZoneInfo("America/Sao_Paulo")
+    local_published = published_at.astimezone(zone)
+    deadline = None
+    for paragraph in paragraphs:
+        if not re.search(r"(?:oferta|promoção|campanha).*v[áa]lid|at[ée].*(?:sexta|quinta|quarta|terça|segunda|sábado|domingo|amanhã|hoje)", paragraph, re.I):
+            continue
+        match = re.search(r"(?:até|dia)\s*(?:as?\s*\d{1,2}h\d{0,2}\s*)?(?:.*?\s)?(\d{1,2})/(\d{1,2})/(20\d{2})", paragraph, re.I)
+        try:
+            if match:
+                day, month, year = map(int, match.groups())
+                deadline = datetime(year, month, day, tzinfo=zone)
+            else:
+                day_match = re.search(r"(?:até.{0,80}?\(|dia\s+)(\d{1,2})\)?", paragraph, re.I)
+                if day_match:
+                    deadline = local_published.replace(day=int(day_match.group(1)), hour=0, minute=0, second=0)
+                    if deadline.date() < local_published.date():
+                        deadline = None
+                elif re.search(r"(?:só|somente|apenas|até).*hoje", paragraph, re.I):
+                    deadline = local_published.replace(hour=0, minute=0, second=0)
+            if deadline:
+                break
+        except ValueError:
+            continue
+    if deadline is None:
+        return None
+    expires = deadline + timedelta(days=1)
+    if not now < expires <= now + timedelta(days=40):
+        return None
+    url = entry["link"]
+    return Offer(
+        urlsplit(url).hostname, url, title, category, now.isoformat(),
+        make_fingerprint(url, title, category), expires.isoformat(),
+        "Anúncio encontrado automaticamente na fonte indicada. Prazo identificado na matéria. "
+        "Consulte elegibilidade, cadastro prévio, limites e regulamento antes de participar.",
+    )
+
+
+def discover_campaigns(client, now):
     candidates = {}
+    announced = []
     for feed in DISCOVERY_FEEDS:
         try:
             entries = feedparser.parse(public_page(client, feed)).entries
@@ -131,7 +193,11 @@ def discover_campaigns(client):
             if not re.search(r"bônus|bonific|desconto", entry.get("title", ""), re.I):
                 continue
             try:
-                page = BeautifulSoup(public_page(client, article.geturl()), "html.parser")
+                html = public_page(client, article.geturl())
+                page = BeautifulSoup(html, "html.parser")
+                offer = article_offer(entry, html, now)
+                if offer:
+                    announced.append(offer)
             except httpx.HTTPError:
                 continue
             for anchor in page.find_all("a", href=True):
@@ -140,7 +206,8 @@ def discover_campaigns(client):
                 if target.scheme == "https" and program and re.fullmatch(program[1], target.path):
                     candidates[target._replace(query="", fragment="").geturl()] = program[0]
     print(f"Descoberta: {len(candidates)} campanhas oficiais encontradas")
-    return candidates
+    print(f"Descoberta: {len(announced)} anúncios com prazo vigente")
+    return candidates, announced
 
 
 def collect() -> list[Offer]:
@@ -148,7 +215,9 @@ def collect() -> list[Offer]:
     offers = []
     with httpx.Client(timeout=12, follow_redirects=True, max_redirects=5, headers={"User-Agent": "MontezMilhas/1.0"}) as client:
         client.robots = {}
-        for link, name in list(discover_campaigns(client).items())[:12]:
+        candidates, announced = discover_campaigns(client, now)
+        offers.extend(announced)
+        for link, name in list(candidates.items())[:12]:
             try:
                 offer = campaign_offer(name, link, public_page(client, link), now)
             except httpx.HTTPError:
