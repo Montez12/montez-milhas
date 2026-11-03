@@ -22,16 +22,23 @@ async function getOffers(): Promise<Offer[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return [];
-  try {
-    const response = await fetch(
-      `${url.replace(/\/$/, "")}/rest/v1/offers?select=id,source_name,source_url,title,category,details,collected_at,expires_at&status=eq.active&or=(expires_at.is.null,expires_at.gt.${encodeURIComponent(new Date().toISOString())})&order=collected_at.desc&limit=50`,
+  async function getCategoryOffers(categoryFilter: string, limit: number): Promise<Offer[]> {
+    try {
+      const response = await fetch(
+      `${url.replace(/\/$/, "")}/rest/v1/offers?select=id,source_name,source_url,title,category,details,collected_at,expires_at&status=eq.active&or=(expires_at.is.null,expires_at.gt.${encodeURIComponent(new Date().toISOString())})&${categoryFilter}&order=collected_at.desc&limit=${limit}`,
       { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" }
     );
-    if (!response.ok) return [];
-    return await response.json();
-  } catch {
-    return [];
+      if (!response.ok) return [];
+      return await response.json();
+    } catch {
+      return [];
+    }
   }
+  const [promotions, flights] = await Promise.all([
+    getCategoryOffers("category=neq.passagem", 50),
+    getCategoryOffers("category=eq.passagem", 10),
+  ]);
+  return [...promotions, ...flights].sort((a, b) => Date.parse(b.collected_at) - Date.parse(a.collected_at));
 }
 
 function formatDate(value: string) {
