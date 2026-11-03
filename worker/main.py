@@ -182,7 +182,7 @@ def flight_offer(entry, html, now):
     if not published:
         return None
     published_at = datetime(*published[:6], tzinfo=timezone.utc)
-    if not timedelta(0) <= now - published_at <= timedelta(days=2):
+    if not timedelta(0) <= now - published_at < timedelta(days=7):
         return None
     soup = BeautifulSoup(html, "html.parser")
     body = soup.select_one(".entry-content, .post-content, .td-post-content, .corpo_artigo, article")
@@ -198,28 +198,22 @@ def flight_offer(entry, html, now):
         r"Amsterdã|Frankfurt|Viena|Bruxelas)\b", title, re.I
     )
     origin = re.search(r"(?:saindo de|saídas? (?:de|do)|de)\s+(?:São Paulo|Guarulhos|GRU|Campinas|Viracopos|VCP)\b", text, re.I)
-    price = re.search(r"(\d{1,3}(?:\.\d{3})+)\s*(?:milhas|pontos)\s*(?:para\s+)?(?:a\s+)?(?:viagem\s+de\s+)?ida\s+e\s+volta", text, re.I)
-    departure = re.search(r"\bida\s*[:\-]?\s*(\d{2}/\d{2}/20\d{2})", text, re.I)
-    arrival = re.search(r"\bvolta\s*[:\-]?\s*(\d{2}/\d{2}/20\d{2})", text, re.I)
-    if not all((destination, origin, price, departure, arrival)):
+    price = re.search(r"(\d{1,3}(?:[.,]\d{1,3})*)\s*(mil\s+)?(milhas|pontos)\s*(?:o|por)\s+trecho", title, re.I)
+    if not all((destination, origin, price)):
         return None
-    try:
-        start = datetime.strptime(departure[1], "%d/%m/%Y").replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
-        end = datetime.strptime(arrival[1], "%d/%m/%Y").replace(tzinfo=start.tzinfo)
-    except ValueError:
-        return None
-    if not now < start < end:
-        return None
-    # A recent announcement is displayed for at most 48 hours after publication.
-    expires = min(published_at + timedelta(days=2), start)
+    amount = price[1] + (" mil" if price[2] else "")
+    label = f"São Paulo → {destination[1]}: a partir de {amount} {price[3]} por trecho"
+    period = re.search(r"(?:viajar|viagens)\s+(?:em|entre|no mês de)\s+([^.!?]{4,100})", text, re.I)
+    requirement = " A fonte exige pesquisa de ida e volta para obter esse preço." if re.search(r"obrigatório.*ida e volta", text, re.I) else ""
+    details = f"Preço por trecho anunciado em {published_at.strftime('%d/%m/%Y')}. Taxas e disponibilidade devem ser consultadas na fonte."
+    if period:
+        details += f" Período informado: {period[1]}."
+    details += requirement
     url = entry["link"]
-    label = f"São Paulo → {destination[1]}: {price[1]} milhas/pontos ida e volta"
     return Offer(
-        urlsplit(url).hostname, url, label, "passagem", now.isoformat(),
-        make_fingerprint(url, label, "passagem"), expires.isoformat(),
-        f"Ida {departure[1]}, volta {arrival[1]}. Preço anunciado pela fonte; "
-        "confirme disponibilidade e taxas antes de emitir. "
-        f"Publicação de {published_at.strftime('%d/%m/%Y')}.",
+        urlsplit(url).hostname, url, label, "passagem", published_at.isoformat(),
+        make_fingerprint(url, label, "passagem"),
+        (published_at + timedelta(days=7)).isoformat(), details,
     )
 
 
