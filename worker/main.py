@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 from zoneinfo import ZoneInfo
 
+import feedparser
 import httpx
 from bs4 import BeautifulSoup
 
@@ -98,11 +99,56 @@ def campaign_offer(name, url, html, now):
                  "Consulte o regulamento para verificar elegibilidade e limites.")
 
 
+DISCOVERY_FEEDS = (
+    "https://passageirodeprimeira.com/feed/",
+    "https://pontospravoar.com/feed/",
+)
+OFFICIAL_CAMPAIGNS = {
+    "www.livelo.com.br": ("Livelo", r"/(?:compra-promo-|transferencia-)[\w-]+"),
+    "www.smiles.com.br": ("Smiles", r"/(?:portal/)?campanhas/[\w-]+"),
+    "www.voeazul.com.br": ("Azul Fidelidade", r"/br/pt/ofertas/[\w-]+"),
+    "latampass.latam.com": ("LATAM Pass", r"/(?:br/pt/promocoes|pt_br/promocao)/[\w-]+"),
+}
+
+
+def discover_campaigns(client):
+    candidates = {}
+    for feed in DISCOVERY_FEEDS:
+        try:
+            entries = feedparser.parse(public_page(client, feed)).entries
+        except httpx.HTTPError:
+            print(f"{urlsplit(feed).hostname}: feed indisponível")
+            continue
+        for entry in entries[:8]:
+            article = urlsplit(entry.get("link", ""))
+            if article.scheme != "https" or article.netloc != urlsplit(feed).netloc:
+                continue
+            if not re.search(r"bônus|bonific|desconto", entry.get("title", ""), re.I):
+                continue
+            try:
+                page = BeautifulSoup(public_page(client, article.geturl()), "html.parser")
+            except httpx.HTTPError:
+                continue
+            for anchor in page.find_all("a", href=True):
+                target = urlsplit(anchor["href"])
+                program = OFFICIAL_CAMPAIGNS.get(target.netloc)
+                if target.scheme == "https" and program and re.fullmatch(program[1], target.path):
+                    candidates[target._replace(query="", fragment="").geturl()] = program[0]
+    return candidates
+
+
 def collect() -> list[Offer]:
     now = datetime.now(timezone.utc)
     offers = []
     with httpx.Client(timeout=12, headers={"User-Agent": "MontezMilhas/1.0"}) as client:
         client.robots = {}
+        for link, name in list(discover_campaigns(client).items())[:12]:
+            try:
+                offer = campaign_offer(name, link, public_page(client, link), now)
+            except httpx.HTTPError:
+                continue
+            if offer:
+                offers.append(offer)
         azul_url = "https://www.voeazul.com.br/br/pt/ofertas/livelo-meta-teste"
         try:
             azul = campaign_offer("Azul Fidelidade", azul_url, public_page(client, azul_url), now)
@@ -163,7 +209,7 @@ def collect() -> list[Offer]:
         if starts <= now < datetime.fromisoformat(expiry):
             offers.append(Offer(source, url, title, category, now.isoformat(),
                                 make_fingerprint(url, title, category), expiry, details))
-    return offers
+    return list({offer.fingerprint: offer for offer in offers}.values())
 
 
 def persist(offers: list[Offer]) -> tuple[int, int]:
