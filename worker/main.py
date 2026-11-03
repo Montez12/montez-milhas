@@ -141,6 +141,28 @@ def collect() -> list[Offer]:
             "Campanha verificada no regulamento oficial. Cadastre-se antes de transferir. "
             "O bônus varia conforme a elegibilidade. Consulte o regulamento para os limites.",
         ))
+    verified_campaigns = [
+        (
+            "Passageiro de Primeira",
+            "https://passageirodeprimeira.com/livelo-oferece-ate-56-desconto-compra-pontos-para-assinantes-clube-milheiro-a-partir-r-2987/",
+            "Livelo: até 56% de desconto na compra de pontos",
+            "compra_milhas",
+            "2026-11-07T00:00:00-03:00",
+            "Para assinantes do Clube Livelo. A partir de R$ 29,87 por mil pontos no Pix, conforme o plano.",
+        ),
+        (
+            "Momento Viagem",
+            "https://momentoviagem.com.br/so-hoje-porto-bank-para-latam-pass-tem-25-de-bonus-e-mais-1-000-milhas-na-primeira-transferencia/",
+            "Porto Bank → LATAM Pass: 25% de bônus",
+            "transferencia",
+            "2026-11-04T00:00:00-03:00",
+            "Mais 1.000 milhas na primeira transferência elegível. Confira o cadastro e as condições na fonte.",
+        ),
+    ]
+    for source, url, title, category, expiry, details in verified_campaigns:
+        if starts <= now < datetime.fromisoformat(expiry):
+            offers.append(Offer(source, url, title, category, now.isoformat(),
+                                make_fingerprint(url, title, category), expiry, details))
     return offers
 
 
