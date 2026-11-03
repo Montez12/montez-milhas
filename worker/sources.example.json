@@ -1,0 +1,4 @@
+{
+  "comment": "Adicionar apenas fontes públicas cuja coleta automatizada seja permitida. Validar termos, robots.txt e rate limits.",
+  "sources": []
+}
