@@ -102,6 +102,10 @@ def campaign_offer(name, url, html, now):
 DISCOVERY_FEEDS = (
     "https://passageirodeprimeira.com/feed/",
     "https://pontospravoar.com/feed/",
+    "https://www.melhoresdestinos.com.br/feed",
+    "https://www.melhorescartoes.com.br/feed",
+    "https://altarendablog.com.br/feed/",
+    "https://www.cartoesmilhaseviagens.com.br/feed/",
 )
 OFFICIAL_CAMPAIGNS = {
     "www.livelo.com.br": ("Livelo", r"/(?:compra-promo-|transferencia-)[\w-]+"),
@@ -116,6 +120,7 @@ def discover_campaigns(client):
     for feed in DISCOVERY_FEEDS:
         try:
             entries = feedparser.parse(public_page(client, feed)).entries
+            print(f"{urlsplit(feed).hostname}: {len(entries)} publicações disponíveis")
         except httpx.HTTPError:
             print(f"{urlsplit(feed).hostname}: feed indisponível")
             continue
@@ -134,6 +139,7 @@ def discover_campaigns(client):
                 program = OFFICIAL_CAMPAIGNS.get(target.netloc)
                 if target.scheme == "https" and program and re.fullmatch(program[1], target.path):
                     candidates[target._replace(query="", fragment="").geturl()] = program[0]
+    print(f"Descoberta: {len(candidates)} campanhas oficiais encontradas")
     return candidates
 
 
@@ -247,7 +253,7 @@ def record_run(started_at: str, found: int, saved: int, status: str, message: st
     payload = {
         "started_at": started_at,
         "finished_at": utc_now(),
-        "source_count": 0,
+        "source_count": len(DISCOVERY_FEEDS) + len(CAMPAIGN_SOURCES) + 1,
         "offers_found": found,
         "offers_saved": saved,
         "status": status,
