@@ -36,7 +36,21 @@ async function getOffers(): Promise<Offer[]> {
     getCategoryOffers("category=neq.passagem", 50),
     getCategoryOffers("category=eq.passagem", 10),
   ]);
-  return [...promotions, ...flights].sort((a, b) => Date.parse(b.collected_at) - Date.parse(a.collected_at));
+  const uniquePromotions = new Map<string, Offer>();
+  for (const offer of promotions) {
+    const title = offer.title.toLowerCase();
+    let campaign = offer.id;
+    if (offer.category === "transferencia") {
+      if (title.includes("azul") && title.includes("livelo")) campaign = "livelo-azul";
+      if (title.includes("porto") && title.includes("latam")) campaign = "porto-latam";
+    }
+    const identity = `${campaign}|${offer.expires_at}`;
+    const existing = uniquePromotions.get(identity);
+    if (!existing || offer.source_name === "Azul Fidelidade") {
+      uniquePromotions.set(identity, offer);
+    }
+  }
+  return [...uniquePromotions.values(), ...flights].sort((a, b) => Date.parse(b.collected_at) - Date.parse(a.collected_at));
 }
 
 function formatDate(value: string) {
