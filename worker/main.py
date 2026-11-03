@@ -119,7 +119,7 @@ def discover_campaigns(client):
         except httpx.HTTPError:
             print(f"{urlsplit(feed).hostname}: feed indisponível")
             continue
-        for entry in entries[:8]:
+        for entry in entries[:30]:
             article = urlsplit(entry.get("link", ""))
             if article.scheme != "https" or article.netloc != urlsplit(feed).netloc:
                 continue
@@ -140,7 +140,7 @@ def discover_campaigns(client):
 def collect() -> list[Offer]:
     now = datetime.now(timezone.utc)
     offers = []
-    with httpx.Client(timeout=12, headers={"User-Agent": "MontezMilhas/1.0"}) as client:
+    with httpx.Client(timeout=12, follow_redirects=True, max_redirects=5, headers={"User-Agent": "MontezMilhas/1.0"}) as client:
         client.robots = {}
         for link, name in list(discover_campaigns(client).items())[:12]:
             try:
@@ -260,8 +260,9 @@ def record_run(started_at: str, found: int, saved: int, status: str, message: st
 
 def main() -> None:
     started = utc_now()
-    offers = collect()
+    offers = []
     try:
+        offers = collect()
         found, saved = persist(offers)
         record_run(started, found, saved, "success", "Nenhuma campanha com validade verificável encontrada." if not offers else "")
         print(f"{utc_now()} - {saved} ofertas persistidas")
