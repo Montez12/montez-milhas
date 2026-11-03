@@ -109,7 +109,8 @@ def collect() -> list[Offer]:
             if azul:
                 offers.append(azul)
         except httpx.HTTPError as error:
-            print(f"Azul Fidelidade: {type(error).__name__}")
+            status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else type(error).__name__
+            print(f"Azul Fidelidade: {status}")
         for name, (index, path_pattern) in CAMPAIGN_SOURCES.items():
             try:
                 soup = BeautifulSoup(public_page(client, index), "html.parser")
@@ -129,6 +130,17 @@ def collect() -> list[Offer]:
                     continue
                 if offer:
                     offers.append(offer)
+    # Campaign manually verified against the official Azul regulation.
+    starts = datetime.fromisoformat("2026-11-03T00:00:00-03:00")
+    expires = datetime.fromisoformat("2026-11-07T00:00:00-03:00")
+    if starts <= now < expires and not any(offer.source_url == azul_url for offer in offers):
+        title = "Livelo → Azul Fidelidade: até 130% de bônus"
+        offers.append(Offer(
+            "Azul Fidelidade", azul_url, title, "transferencia", now.isoformat(),
+            make_fingerprint(azul_url, title, "transferencia"), expires.isoformat(),
+            "Campanha verificada no regulamento oficial. Cadastre-se antes de transferir. "
+            "O bônus varia conforme a elegibilidade. Consulte o regulamento para os limites.",
+        ))
     return offers
 
 
