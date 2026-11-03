@@ -8,9 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: montez-milhas-collector
+  cancel-in-progress: false
+
 jobs:
   collect:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check required secrets
         id: config
@@ -22,7 +27,8 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "Supabase secrets are not configured; skipping collection."
+            echo "::error::Supabase secrets are not configured."
+            exit 1
           fi
 
       - name: Checkout repository
