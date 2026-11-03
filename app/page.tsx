@@ -20,7 +20,7 @@ async function getOffers(): Promise<Offer[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return [];
-  async function getCategoryOffers(categoryFilter: string, limit: number): Promise<Offer[]> {
+  const getCategoryOffers = async (categoryFilter: string, limit: number): Promise<Offer[]> => {
     try {
       const response = await fetch(
       `${url.replace(/\/$/, "")}/rest/v1/offers?select=id,source_name,source_url,title,category,details,collected_at,expires_at&status=eq.active&or=(expires_at.is.null,expires_at.gt.${encodeURIComponent(new Date().toISOString())})&${categoryFilter}&order=collected_at.desc&limit=${limit}`,
