@@ -1,15 +1,17 @@
-"""Coletor e persistência do Montez Milhas.
-
-As fontes reais serão adicionadas somente após validar acesso, termos e formato.
-Sem conectores ativos, o worker registra uma execução vazia e não inventa ofertas.
-"""
+"""Coleta e persistência de campanhas oficiais do Montez Milhas."""
 import hashlib
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import re
+from urllib.parse import urljoin, urlsplit
+from urllib.robotparser import RobotFileParser
+from zoneinfo import ZoneInfo
+
 import httpx
+from bs4 import BeautifulSoup
 
 
 @dataclass
@@ -33,10 +35,92 @@ def make_fingerprint(source_url: str, title: str, category: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+CAMPAIGN_SOURCES = {
+    "Livelo": ("https://www.livelo.com.br/ofertas", r"/(?:compra-promo-[\w-]+|transferencia-[\w-]+)"),
+    "Smiles": ("https://www.smiles.com.br/smiles-money", r"/portal/campanhas/[\w-]+"),
+}
+
+
+def public_page(client, url):
+    parts = urlsplit(url)
+    origin = f"{parts.scheme}://{parts.netloc}"
+    if origin not in client.robots:
+        response = client.get(f"{origin}/robots.txt")
+        rules = RobotFileParser()
+        if response.status_code == 404:
+            rules.parse([])
+        else:
+            response.raise_for_status()
+            rules.parse(response.text.splitlines())
+        client.robots[origin] = rules
+    if not client.robots[origin].can_fetch("MontezMilhas", url):
+        return ""
+    response = client.get(url)
+    response.raise_for_status()
+    return response.text
+
+
+def campaign_offer(name, url, html, now):
+    soup = BeautifulSoup(html, "html.parser")
+    heading = soup.find("h1")
+    if not heading:
+        return None
+    title = heading.get_text(" ", strip=True)
+    text = " ".join(soup.stripped_strings)
+    date_range = re.search(
+        r"campanha válida de (\d{1,2})(?:/(\d{2})/(\d{2,4}))?"
+        r"\s+a(?:té)?\s+(\d{1,2})/(\d{2})/(\d{2}|\d{4})(?!\d)",
+        text, re.IGNORECASE,
+    )
+    if not date_range:
+        return None
+    first, first_month, first_year, last, month, year = date_range.groups()
+    zone = ZoneInfo("America/Sao_Paulo")
+    try:
+        start = datetime(int(first_year or year) % 100 + 2000, int(first_month or month), int(first), tzinfo=zone)
+        end = datetime(int(year) % 100 + 2000, int(month), int(last), tzinfo=zone) + timedelta(days=1)
+    except ValueError:
+        return None
+    if not start <= now < end:
+        return None
+    if re.search(r"\d+\s*%\s*(?:de\s+)?(?:off|desconto)", title, re.I) and re.search(
+        r"compr[ae]\s+(?:de\s+)?(?:pontos|milhas)", text, re.I
+    ):
+        category = "compra_milhas"
+    elif re.search(r"\d+\s*%\s*(?:de\s+)?bônus", title, re.I) and re.search(r"transf[ei]r", text, re.I):
+        category = "transferencia"
+    else:
+        return None
+    return Offer(name, url, title, category, now.isoformat(),
+                 make_fingerprint(url, title, category), end.isoformat(),
+                 "Consulte o regulamento para verificar elegibilidade e limites.")
+
+
 def collect() -> list[Offer]:
-    # TODO: conectar fontes públicas/oficiais após validação individual.
-    # Categorias aceitas: transferencia, passagem, compra_milhas.
-    return []
+    now = datetime.now(timezone.utc)
+    offers = []
+    with httpx.Client(timeout=12, headers={"User-Agent": "MontezMilhas/1.0"}) as client:
+        client.robots = {}
+        for name, (index, path_pattern) in CAMPAIGN_SOURCES.items():
+            try:
+                soup = BeautifulSoup(public_page(client, index), "html.parser")
+            except httpx.HTTPError:
+                print(f"{name}: página de ofertas indisponível")
+                continue
+            links = set()
+            for anchor in soup.find_all("a", href=True):
+                target = urlsplit(urljoin(index, anchor["href"]))
+                if target.scheme == "https" and target.netloc == urlsplit(index).netloc and re.fullmatch(path_pattern, target.path):
+                    links.add(target._replace(query="", fragment="").geturl())
+            for link in sorted(links)[:15]:
+                try:
+                    offer = campaign_offer(name, link, public_page(client, link), now)
+                except httpx.HTTPError:
+                    print(f"{name}: campanha indisponível")
+                    continue
+                if offer:
+                    offers.append(offer)
+    return offers
 
 
 def persist(offers: list[Offer]) -> tuple[int, int]:
@@ -90,7 +174,7 @@ def main() -> None:
     offers = collect()
     try:
         found, saved = persist(offers)
-        record_run(started, found, saved, "success", "Nenhum conector de fonte está ativo." if not offers else "")
+        record_run(started, found, saved, "success", "Nenhuma campanha com validade verificável encontrada." if not offers else "")
         print(f"{utc_now()} - {saved} ofertas persistidas")
     except Exception as exc:
         try:
