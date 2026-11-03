@@ -44,3 +44,10 @@ create policy "Public can read active offers"
   using (status = 'active');
 
 -- Histórico de execuções não é público.
+
+
+-- Permissões explícitas para a Data API: leitura pública somente via RLS nas ofertas ativas.
+grant usage on schema public to anon, authenticated, service_role;
+grant select on public.offers to anon, authenticated;
+grant all on public.offers to service_role;
+grant all on public.collection_runs to service_role;
