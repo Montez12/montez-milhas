@@ -176,6 +176,53 @@ def article_offer(entry, html, now):
     )
 
 
+
+def flight_offer(entry, html, now):
+    published = entry.get("published_parsed")
+    if not published:
+        return None
+    published_at = datetime(*published[:6], tzinfo=timezone.utc)
+    if not timedelta(0) <= now - published_at <= timedelta(days=2):
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+    body = soup.select_one(".entry-content, .post-content, .td-post-content, .corpo_artigo, article")
+    if body is None:
+        return None
+    title = BeautifulSoup(entry.get("title", ""), "html.parser").get_text(" ", strip=True)
+    text = body.get_text(" ", strip=True)
+    if re.search(r"encerrad|expirad", title, re.I):
+        return None
+    destination = re.search(
+        r"para\s+(Miami|Orlando|Nova York|Boston|Los Angeles|São Francisco|"
+        r"Lisboa|Porto|Madri|Madrid|Barcelona|Paris|Roma|Milão|Londres|"
+        r"Amsterdã|Frankfurt|Viena|Bruxelas)\b", title, re.I
+    )
+    origin = re.search(r"(?:saindo de|saídas? (?:de|do)|de)\s+(?:São Paulo|Guarulhos|GRU|Campinas|Viracopos|VCP)\b", text, re.I)
+    price = re.search(r"(\d{1,3}(?:\.\d{3})+)\s*(?:milhas|pontos)\s*(?:para\s+)?(?:a\s+)?(?:viagem\s+de\s+)?ida\s+e\s+volta", text, re.I)
+    departure = re.search(r"\bida\s*[:\-]?\s*(\d{2}/\d{2}/20\d{2})", text, re.I)
+    arrival = re.search(r"\bvolta\s*[:\-]?\s*(\d{2}/\d{2}/20\d{2})", text, re.I)
+    if not all((destination, origin, price, departure, arrival)):
+        return None
+    try:
+        start = datetime.strptime(departure[1], "%d/%m/%Y").replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
+        end = datetime.strptime(arrival[1], "%d/%m/%Y").replace(tzinfo=start.tzinfo)
+    except ValueError:
+        return None
+    if not now < start < end:
+        return None
+    # A recent announcement is displayed for at most 48 hours after publication.
+    expires = min(published_at + timedelta(days=2), start)
+    url = entry["link"]
+    label = f"São Paulo → {destination[1]}: {price[1]} milhas/pontos ida e volta"
+    return Offer(
+        urlsplit(url).hostname, url, label, "passagem", now.isoformat(),
+        make_fingerprint(url, label, "passagem"), expires.isoformat(),
+        f"Ida {departure[1]}, volta {arrival[1]}. Preço anunciado pela fonte; "
+        "confirme disponibilidade e taxas antes de emitir. "
+        f"Publicação de {published_at.strftime('%d/%m/%Y')}.",
+    )
+
+
 def discover_campaigns(client, now):
     candidates = {}
     announced = []
@@ -190,12 +237,12 @@ def discover_campaigns(client, now):
             article = urlsplit(entry.get("link", ""))
             if article.scheme != "https" or article.netloc != urlsplit(feed).netloc:
                 continue
-            if not re.search(r"bônus|bonific|desconto", entry.get("title", ""), re.I):
+            if not re.search(r"bônus|bonific|desconto|milhas|pontos", entry.get("title", ""), re.I):
                 continue
             try:
                 html = public_page(client, article.geturl())
                 page = BeautifulSoup(html, "html.parser")
-                offer = article_offer(entry, html, now)
+                offer = article_offer(entry, html, now) or flight_offer(entry, html, now)
                 if offer:
                     announced.append(offer)
             except httpx.HTTPError:
