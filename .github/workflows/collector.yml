@@ -3,7 +3,10 @@ name: Montez Milhas collector
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "17 */12 * * *"
+
+permissions:
+  contents: read
 
 jobs:
   collect:
