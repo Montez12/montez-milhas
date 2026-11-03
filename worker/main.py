@@ -62,13 +62,15 @@ def public_page(client, url):
 
 def campaign_offer(name, url, html, now):
     soup = BeautifulSoup(html, "html.parser")
-    heading = soup.find("h1")
-    if not heading:
+    headings = [tag.get_text(" ", strip=True) for tag in soup.find_all(["h1", "h2", "h3"])]
+    title = next((line for line in headings if re.search(
+        r"\d+\s*%\s*(?:de\s+)?(?:bônus|off|desconto)", line, re.I
+    )), "")
+    if not title:
         return None
-    title = heading.get_text(" ", strip=True)
     text = " ".join(soup.stripped_strings)
     date_range = re.search(
-        r"campanha válida de (\d{1,2})(?:/(\d{2})/(\d{2,4}))?"
+        r"(?:campanha válida|oferta válida|período da promoção:)\s*(?:de\s+)?(\d{1,2})(?:/(\d{2})/(\d{2,4}))?"
         r"\s+a(?:té)?\s+(\d{1,2})/(\d{2})/(\d{2}|\d{4})(?!\d)",
         text, re.IGNORECASE,
     )
@@ -101,6 +103,13 @@ def collect() -> list[Offer]:
     offers = []
     with httpx.Client(timeout=12, headers={"User-Agent": "MontezMilhas/1.0"}) as client:
         client.robots = {}
+        azul_url = "https://www.voeazul.com.br/br/pt/ofertas/livelo-meta-teste"
+        try:
+            azul = campaign_offer("Azul Fidelidade", azul_url, public_page(client, azul_url), now)
+            if azul:
+                offers.append(azul)
+        except httpx.HTTPError as error:
+            print(f"Azul Fidelidade: {type(error).__name__}")
         for name, (index, path_pattern) in CAMPAIGN_SOURCES.items():
             try:
                 soup = BeautifulSoup(public_page(client, index), "html.parser")
